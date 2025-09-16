@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Wiki Quiz Internet</title>
+<style>
+body { font-family: Arial; background:#f0f8ff; text-align:center; }
+#scoreboard {
+  position: fixed; top:10px; right:10px; 
+  background:#fff; border-radius:10px; padding:10px; 
+  box-shadow:0 2px 6px rgba(0,0,0,0.3); max-width:220px; text-align:left;
+}
+#quiz-container { margin-top: 50px; }
+button { padding:10px 20px; margin:5px; font-size:16px; cursor:pointer; border-radius:5px; }
+img { max-width:300px; margin:20px 0; border-radius:8px; }
+input { padding:8px; font-size:16px; border-radius:5px; border:1px solid #aaa; }
+</style>
+</head>
+<body>
+
+<h1>Wiki Quiz Internet</h1>
+
+<div id="login-container">
+  <p>Gib deinen Namen ein:</p>
+  <input type="text" id="player-name" placeholder="Name">
+  <button onclick="startGame()">Start</button>
+</div>
+
+<div id="scoreboard" style="display:none;">
+  Spieler: <b id="player-display"></b><br>
+  Punkte: <span id="score">0</span>
+  <div id="highscores" style="margin-top:10px;"></div>
+</div>
+
+<div id="quiz-container" style="display:none;">
+  <div id="question"></div>
+  <img id="q-image" src="" style="display:none;">
+  <div id="options"></div>
+  <div id="timer"></div>
+</div>
+
+<script>
+let score = 0;
+let currentQuestion = {};
+let timer;
+let timeLeft = 15;
+let playerName = "";
+
+// LocalStorage Highscores laden
+function loadHighscores(){
+  let scores = JSON.parse(localStorage.getItem('wiki_highscores')||"[]");
+  scores.sort((a,b)=>b.score - a.score);
+  let html="<b>Highscores:</b><br>";
+  scores.forEach(s=>{
+    html+=s.name + ": " + s.score + "<br>";
+  });
+  document.getElementById('highscores').innerHTML = html;
+}
+
+// LocalStorage Score speichern
+function saveScore(){
+  if(!playerName) return;
+  let scores = JSON.parse(localStorage.getItem('wiki_highscores')||"[]");
+  scores.push({name:playerName, score:score});
+  localStorage.setItem('wiki_highscores', JSON.stringify(scores));
+  loadHighscores();
+}
+
+// Start des Spiels
+function startGame(){
+  let input = document.getElementById('player-name').value.trim();
+  if(!input){ alert("Bitte Namen eingeben!"); return; }
+  playerName = input;
+  document.getElementById('player-display').innerText = playerName;
+
+  document.getElementById('login-container').style.display="none";
+  document.getElementById('scoreboard').style.display="block";
+  document.getElementById('quiz-container').style.display="block";
+
+  loadHighscores();
+  getRandomWikipediaPage();
+}
+
+// Wikipedia Frage holen
+function getRandomWikipediaPage() {
+  fetch('https://de.wikipedia.org/api/rest_v1/page/random/summary')
+  .then(res => res.json())
+  .then(data => {
+    let text = data.extract.split('. ')[0];
+    let words = text.split(' ');
+    if(words.length < 5) { getRandomWikipediaPage(); return; }
+
+    let idx = Math.floor(Math.random() * words.length);
+    let answer = words[idx].replace(/[^a-zA-Z0-9äöüÄÖÜß]/g,'');
+    words[idx] = '_____';
+    let questionText = words.join(' ');
+
+    let falseOptions = [];
+    while(falseOptions.length<3){
+      let w = words[Math.floor(Math.random()*words.length)].replace(/[^a-zA-Z0-9äöüÄÖÜß]/g,'');
+      if(w && w!=answer && !falseOptions.includes(w)) falseOptions.push(w);
+    }
+    let options = falseOptions.concat(answer);
+    options.sort(()=>Math.random()-0.5);
+
+    currentQuestion = {question:questionText, answer:answer, options:options, image:data.thumbnail?data.thumbnail.source:""};
+    showQuestion();
+  }).catch(err => {
+    console.log(err);
+    document.getElementById('question').innerText="Fehler beim Laden von Wikipedia!";
+  });
+}
+
+// Frage anzeigen
+function showQuestion(){
+  document.getElementById('question').innerText=currentQuestion.question;
+  if(currentQuestion.image){
+    document.getElementById('q-image').src=currentQuestion.image;
+    document.getElementById('q-image').style.display="block";
+  } else document.getElementById('q-image').style.display="none";
+
+  let html="";
+  currentQuestion.options.forEach(opt=>{
+    html += `<button onclick="checkAnswer('${opt}')">${opt}</button><br>`;
+  });
+  document.getElementById('options').innerHTML=html;
+
+  timeLeft=15;
+  document.getElementById('timer').innerText=`Zeit: ${timeLeft}`;
+  clearInterval(timer);
+  timer = setInterval(()=>{
+    timeLeft--;
+    document.getElementById('timer').innerText=`Zeit: ${timeLeft}`;
+    if(timeLeft<=0){ clearInterval(timer); getRandomWikipediaPage(); }
+  },1000);
+}
+
+// Antwort prüfen
+function checkAnswer(selected){
+  if(selected == currentQuestion.answer) score++;
+  document.getElementById('score').innerText=score;
+  clearInterval(timer);
+  getRandomWikipediaPage();
+}
+
+// Score speichern, wenn Browser geschlossen wird
+window.addEventListener("beforeunload", saveScore);
+</script>
+
+</body>
+</html>
